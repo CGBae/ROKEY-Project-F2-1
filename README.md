@@ -1,5 +1,31 @@
 # PALPA — 촉각 기반 공 선별·포장 협동로봇
 
+[시연과 기술 설명 ↗](https://cgbae.github.io/projects/palpa/) · [배철규 포트폴리오 ↗](https://cgbae.github.io/)
+
+## 프로젝트와 담당 역할
+
+- 기간: 2026.07.15–2026.07.29 · 4인 팀 · Doosan M0609 / OnRobot RG2
+- 배철규 담당: 웹 티칭펜던트 구현, 공 분류·주문 포장 과정의 연속 동작 구현
+- 아래 공 분류·무게 판정·주문 파이프라인은 팀 전체 시스템의 설명입니다.
+
+## 처음 보는 분을 위한 코드 안내
+
+| 확인할 내용 | 구현 위치 |
+| --- | --- |
+| 웹 조작과 로봇 명령 | [JogWorker](palpa_project_final/core/jog.py), [HTTP 요청 처리](palpa_project_final/core/api.py) |
+| 작업점 저장과 재호출 | [저장 모듈](palpa_project_final/core/store.py), [티칭 화면](palpa_project_final/palpa_ui.html) |
+| 잔여 관절각에 따른 다음 목표 전송 | [주문 동작](palpa_project_final/sequences/order.py), [구간별 모션 설정](palpa_project_final/config/motion.py) |
+| 연속 동작의 설계 배경 | [경로 개선 기록](palpa_project_final/docs/PATH_OPTIMIZATION.md) |
+| ROS2 주문 인터페이스 | [워크스페이스 안내](palpa_project_final/palpa_ws/README.md) |
+
+실제 애플리케이션과 아래 파일 구조의 기준 디렉터리는 [palpa_project_final/](palpa_project_final/)입니다.
+루트의 frontend/·backend/·ros2_ws/는 비어 있는 초기 폴더이며, 현재 실행 진입점은 palpa_project_final/grip_web.py입니다.
+
+연속 이동은 비동기 명령과 잔여 관절각 임계값으로 구현했습니다. 동일 조건의 변경 전후 성능 측정과 lead 대기 timeout 처리 보완은 남아 있습니다.
+현장 드라이버·좌표·장비 설정에 따라 동작이 달라지며, 아래 개발 기록의 수치를 일반적인 성능 보장으로 사용하지 않습니다.
+
+---
+
 > **카메라 없이, 그리퍼의 파지력만으로 공의 상태를 판별하는 로봇 시스템**
 > Doosan M0609 협동로봇 + OnRobot RG2 그리퍼
 
@@ -150,8 +176,8 @@ flowchart LR
 ```
 
 `⊙` 표시는 **무정지 통과 경유점**입니다. 모든 흐름이 허브 **P5**를 지나며,
-P5는 사방이 트여 있어 **45° 코너**로 가장 크게 돌아 부드럽게 통과합니다.
-자세한 내용은 [docs/PATH_OPTIMIZATION.md](docs/PATH_OPTIMIZATION.md) 참조.
+P5의 lead 기본값 45°는 다음 목표를 보내는 최대 잔여 관절각 기준입니다. 실제 경로의 코너 각도나 반경을 뜻하지 않습니다.
+자세한 내용은 [docs/PATH_OPTIMIZATION.md](palpa_project_final/docs/PATH_OPTIMIZATION.md) 참조.
 
 ---
 
@@ -190,7 +216,7 @@ flowchart TD
 
 ROS 노드가 로봇을 직접 제어하지 않고 **`grip_web.py`에 HTTP로 위임**합니다.
 실기에서 검증된 스택(드라이버 호출·그리퍼 Modbus·판정·안전복구·블렌딩)을 100% 재사용하기 위해서입니다.
-덕분에 팀 통합 계약(`/palpa/process_item` 액션)을 지키면서도 **재테스트 위험이 0**입니다.
+기존 공정과 ROS2 주문 인터페이스를 분리한 구조입니다. 인터페이스 변경 후에는 계약 테스트와 실기 동작을 다시 확인해야 합니다.
 
 ---
 
@@ -364,8 +390,8 @@ data/                            런타임 데이터 (아래 8장 참조)
 
 ```bash
 # 1) 이 저장소
-git clone <저장소-URL> palpa_project_final
-cd palpa_project_final
+git clone https://github.com/CGBae/ROKEY-Project-F2-1.git
+cd ROKEY-Project-F2-1/palpa_project_final
 
 # 2) ROS 인터페이스/노드 빌드
 cd palpa_ws
@@ -448,7 +474,7 @@ ros2 run palpa_control robot_controller_stub_node   # robot_controller_node 대�
 | P2 | 테니스공 잡고난 경유지 | 무정지 통과(블렌딩) |
 | P3 | 야구공 슬롯 잡는 위치 | 야구공 파지 |
 | P4 | 야구공 잡고 난 경유지 | 무정지 통과(블렌딩) |
-| **P5** | **전체 경유지** | **모든 흐름의 허브 — 코너 45°로 크게 돌아 무정지 통과** |
+| **P5** | **전체 경유지** | **공정의 허브 — lead 45° 기준으로 다음 목표 전송** |
 | P6 | 포장 품목 넣는 위치 | 정상품 투입 |
 | P7 | 불량 품목 넣는 위치 | 불량품 투입 |
 | P8~P12 | 뚜껑 잡기 / 장착 / 회전 | 순응제어(compliance) 구간 |
@@ -457,10 +483,10 @@ ros2 run palpa_control robot_controller_stub_node   # robot_controller_node 대�
 | P20~P24 | 갱신 포인트 | T8·T10·T11·T12 업데이트본 |
 | P25~P30 | 폐기물 처리 | 폐기통 파지 → 비움 → 원위치 |
 
-### 모션 블렌딩 — 실측으로 얻은 교훈
+### 비동기 이동 연결 — 드라이버와 잔여각 조건
 
 > **`radius` 파라미터는 이 드라이버의 비동기 경로에서 동작하지 않습니다.**
-> `amovej`가 `radius`를 전달하지 않기 때문입니다. 실제 코너 크기는
+> `amovej`가 `radius`를 전달하지 않기 때문입니다. 다음 목표를 보내는 시점은
 > **`lead_deg`** — *다음 명령을 언제 보내는가(남은 각도)* — 로 제어합니다.
 
 | 구간 | lead 각도 |
@@ -469,7 +495,7 @@ ros2 run palpa_control robot_controller_stub_node   # robot_controller_node 대�
 | 일반 구간 | 15~25° |
 | 슬롯 접근 | 18° |
 | 폐기 경로 | 10~20° |
-| P29 → P28 (역순 복귀) | 동기 이동 (충돌 위험 구간) |
+| P29 복귀 | 비동기 이동 · lead 4° (현재 코드 기준) |
 
 > ⚠️ `MoveSplineJoint` 실행 중에 `amovej`를 겹쳐 보내면 **알람 없이 컨트롤러가 멈춥니다**(흰불).
 
@@ -477,11 +503,11 @@ ros2 run palpa_control robot_controller_stub_node   # robot_controller_node 대�
 
 | 문서 | 내용 |
 |---|---|
-| **[docs/CLASSIFICATION.md](docs/CLASSIFICATION.md)** | 공 판별 알고리즘 — 파지력·폭만으로 종류·상태 구분, 특징 설계, 캐스케이드 게이트, **실측 56개 전수 100%** |
-| **[docs/PATH_OPTIMIZATION.md](docs/PATH_OPTIMIZATION.md)** | 경로 최적화 — radius가 왜 안 되는지(드라이버 소스 추적), lead_deg 방식의 원리·구현, 사고 6건과 해결 |
-| **[docs/WEIGHT_SENSING.md](docs/WEIGHT_SENSING.md)** | 무게 감지 — 차분 측정 원리, 계산식 전부, 노이즈 억제 2단, 설계 결정 4건 |
-| **[docs/AUTO_RECOVERY.md](docs/AUTO_RECOVERY.md)** | 외력 자동복구 — 감지·복구·재개 3단계, **진행 위치 기억(at 인덱스)**, 위치 추정의 함정 |
-| **[docs/COMPLIANCE_CONTROL.md](docs/COMPLIANCE_CONTROL.md)** | 순응제어 — 축별 강성 설계(왜 Z만 무르게, RZ만 단단하게), 뚜껑 안착·체결, MoveJ 금지 제약 |
+| **[docs/CLASSIFICATION.md](palpa_project_final/docs/CLASSIFICATION.md)** | 공 판별 알고리즘 — 파지력·폭만으로 종류·상태 구분, 특징 설계, 캐스케이드 게이트, 기록된 측정 표본의 판별 결과 |
+| **[docs/PATH_OPTIMIZATION.md](palpa_project_final/docs/PATH_OPTIMIZATION.md)** | 경로 최적화 — radius가 왜 안 되는지(드라이버 소스 추적), lead_deg 방식의 원리·구현, 개발 과정의 문제와 대응 기록 |
+| **[docs/WEIGHT_SENSING.md](palpa_project_final/docs/WEIGHT_SENSING.md)** | 무게 감지 — 차분 측정 원리, 계산식 전부, 노이즈 억제 2단, 설계 결정 4건 |
+| **[docs/AUTO_RECOVERY.md](palpa_project_final/docs/AUTO_RECOVERY.md)** | 외력 자동복구 — 감지·복구·재개 3단계, **진행 위치 기억(at 인덱스)**, 위치 추정의 함정 |
+| **[docs/COMPLIANCE_CONTROL.md](palpa_project_final/docs/COMPLIANCE_CONTROL.md)** | 순응제어 — 축별 강성 설계(왜 Z만 무르게, RZ만 단단하게), 뚜껑 안착·체결, MoveJ 금지 제약 |
 
 ---
 
